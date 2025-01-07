@@ -17,20 +17,35 @@ const viewer = new Cesium.Viewer('cesiumContainer', {
   baseLayerPicker: false,
 });
 
-// Function to upload file and display on map
-async function uploadFile() {
-  const fileInput = document.getElementById('fileInput');
+let modelLocation = { latitude: 0, longitude: 0, altitude: 0 };
+
+// Function to set the location
+function setLocation() {
   const latitude = parseFloat(document.getElementById('latitude').value);
   const longitude = parseFloat(document.getElementById('longitude').value);
   const altitude = parseFloat(document.getElementById('altitude').value || 0);
+
+  if (isNaN(latitude) || isNaN(longitude)) {
+    alert('Please enter valid latitude and longitude.');
+    return;
+  }
+
+  modelLocation = { latitude, longitude, altitude };
+  alert(`Location set to: Latitude ${latitude}, Longitude ${longitude}, Altitude ${altitude}`);
+}
+
+// Function to upload file and display on map
+async function uploadFile() {
+  const fileInput = document.getElementById('fileInput');
+  const { latitude, longitude, altitude } = modelLocation;
 
   if (!fileInput.files.length) {
     alert('Please select an OBJ file to upload.');
     return;
   }
 
-  if (isNaN(latitude) || isNaN(longitude)) {
-    alert('Please enter valid latitude and longitude.');
+  if (latitude === 0 || longitude === 0) {
+    alert('Please set a valid location before uploading the file.');
     return;
   }
 
