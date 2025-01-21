@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KMZ File Handler</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      /* Arrange items vertically */
+      align-items: center;
+      /* Center items horizontally */
+      height: 100vh;
+      background-color: #f4f4f4;
+    }
+
+    .container {
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      width: 400px;
+      margin-bottom: 20px;
+      /* Add margin to separate from the map */
+    }
+
+    .container h1 {
+      font-size: 20px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .container input[type="file"] {
+      margin-bottom: 20px;
+      width: 100%;
+    }
+
+    .container button {
+      width: 100%;
+      padding: 10px;
+      background-color: #007BFF;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .container button:hover {
+      background-color: #0056b3;
+    }
+
+    .output {
+      margin-top: 20px;
+      background: #f9f9f9;
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      overflow-y: auto;
+      max-height: 150px;
+    }
+
+    #map {
+      width: 80%;
+      height: 400px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .image-preview-container {
+      display: flex;
+      flex-wrap: wrap;
+      margin-top: 20px;
+      justify-content: center;
+    }
+
+    .image-preview {
+      margin: 5px;
+      max-width: 100px;
+      max-height: 150px;
+      /* Increased height to accommodate coordinates */
+      border-radius: 5px;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .image-preview img {
+      max-width: 100%;
+      max-height: 80px;
+      border-radius: 5px;
+    }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+
+<body>
+  <div class="container">
+    <h1>KMZ File Handler</h1>
+    <input type="file" id="kmzFileInput" accept=".kmz">
+    <button id="uploadButton">Upload KMZ File</button>
+    <div class="output" id="output"></div>
+  </div>
+
+  <div id="map"></div>
+  <div class="image-preview-container" id="imagePreviewContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip/dist/jszip.min.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-kml@latest/L.KML.js"></script>
+
+  <script>
+    const uploadButton = document.getElementById('uploadButton');
+    const outputDiv = document.getElementById('output');
+    const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+    let uploadFolder = [];
+
+    // Initialize Leaflet Map
+    const map = L.map('map').setView([0, 0], 2); // Default: center of the world, zoom level 2
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    uploadButton.addEventListener('click', async () => {
+      const fileInput = document.getElementById('kmzFileInput');
+      const file = fileInput.files[0];
+
+      if (!file || !file.name.endsWith('.kmz')) {
+        outputDiv.innerHTML = '<p style="color: red;">Please select a valid KMZ file.</p>';
+        return;
+      }
+
+      try {
+        // Step 3: Rename .kmz to .zip
+        const zipFileName = file.name.replace(/\.kmz$/, '.zip');
+        outputDiv.innerHTML = `<p>Renaming: ${file.name} → ${zipFileName}</p>`;
+
+        // Step 4: Unzip the .zip file (using JSZip library)
+        const zip = new JSZip();
+        const zipData = await file.arrayBuffer();
+        const unzippedContent = await zip.loadAsync(zipData);
+
+        // Step 5: Store in "Upload folder" (simulated here as an array)
+        uploadFolder = [];
+        let kmlContent = null;
+        const pngFiles = [];
+
+        for (const [filePath, fileObj] of Object.entries(unzippedContent.files)) {
+          if (!fileObj.dir) {
+            const fileContent = await fileObj.async('string');
+            uploadFolder.push({ filePath, fileContent });
+
+            // Check for KML file (usually doc.kml or the only .kml file)
+            if (filePath.endsWith('.kml')) {
+              kmlContent = fileContent;
+            }
+
+            // Check for PNG files
+            if (filePath.endsWith('.png')) {
+              pngFiles.push({ filePath, content: await fileObj.async('blob') });
+            }
+          }
+        }
+
+        outputDiv.innerHTML += `<p>Unzipped files:</p><pre>${uploadFolder.map(f => f.filePath).join('\n')}</pre>`;
+
+        // Step 7: Display folder structure
+        const folderStructure = uploadFolder.map(f => f.filePath).join('<br>');
+        outputDiv.innerHTML += `<p>Folder Structure:</p><p>${folderStructure}</p>`;
+
+        // Step 8: Empty the upload folder (Keep KML content for map display)
+        const tempKML = uploadFolder.find(f => f.filePath.endsWith('.kml')); // Preserve KML
+        uploadFolder = [];
+        if (tempKML) {
+          uploadFolder.push(tempKML);
+        }
+        outputDiv.innerHTML += '<p>Upload folder emptied (except KML for map).</p>';
+
+        // Step 9: Display PNG previews with coordinates
+        imagePreviewContainer.innerHTML = ''; // Clear previous previews
+
+        if (kmlContent) {
+          const parser = new DOMParser();
+          const kmlDoc = parser.parseFromString(kmlContent, 'text/xml');
+
+          pngFiles.forEach(png => {
+            const imageUrl = URL.createObjectURL(png.content);
+            const imgElement = document.createElement('img');
+            imgElement.src = imageUrl;
+            imgElement.alt = png.filePath;
+            imgElement.onclick = () => {
+              const fullImageUrl = imageUrl; // Image URL for larger view
+              window.open(fullImageUrl, '_blank');
+            };
+
+            // Create a div to hold the image and coordinates
+            const imagePreviewDiv = document.createElement('div');
+            imagePreviewDiv.classList.add('image-preview');
+
+
+            // Extract the filename from the PNG file path
+            const pngFileName = png.filePath.split('/').pop().replace(/\.[^/.]+$/, ""); 
+
+            // Find the Placemark with the same name as the PNG file
+            const placemark = Array.from(kmlDoc.getElementsByTagName('Placemark')).find(p => {
+              const nameElement = p.getElementsByTagName('name')[0];
+              return nameElement && nameElement.textContent === pngFileName;
+            });
+
+            if (placemark) {
+              const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent.trim().split(',');
+              if (coordinates && coordinates.length >= 2) {
+                const lon = parseFloat(coordinates[0]);
+                const lat = parseFloat(coordinates[1]);
+                const coordText = document.createElement('p');
+                coordText.textContent = `Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}`;
+                imagePreviewDiv.appendChild(imgElement);
+                imagePreviewDiv.appendChild(coordText);
+              } else {
+                console.warn(`Coordinates not found for ${png.filePath}`);
+                imagePreviewDiv.appendChild(imgElement);
+              }
+            } else {
+              console.warn(`Placemark not found for ${png.filePath}`);
+              imagePreviewDiv.appendChild(imgElement);
+            }
+
+
+            imagePreviewContainer.appendChild(imagePreviewDiv);
+          });
+
+
+          // Step 10: Display KML on map (if found)
+
+          const kmlLayer = new L.KML(kmlDoc);
+          map.addLayer(kmlLayer);
+
+          // Extract coordinates and overlay images
+          const placemarks = kmlDoc.getElementsByTagName('Placemark');
+          for (const placemark of placemarks) {
+            const coordinates = placemark.getElementsByTagName('coordinates')[0]?.textContent.trim().split(',');
+            if (coordinates && coordinates.length >= 2) {
+              const lon = parseFloat(coordinates[0]);
+              const lat = parseFloat(coordinates[1]);
+
+              // Find the matching PNG file for the location
+              const placemarkName = placemark.getElementsByTagName('name')[0]?.textContent;
+              const matchingPng = pngFiles.find(png => png.filePath.split('/').pop().replace(/\.[^/.]+$/, "") === placemarkName);
+
+              if (matchingPng) {
+                const imageUrl = URL.createObjectURL(matchingPng.content); // Create a URL for the image
+                L.marker([lat, lon]).addTo(map)
+                  .bindPopup(`<img src="${imageUrl}" alt="${matchingPng.filePath}" style="max-width: 100px;"/>`);
+              }
+            }
+          }
+
+          // Adjust map view to fit KML data
+          const bounds = kmlLayer.getBounds();
+          if (bounds.isValid()) {
+            map.fitBounds(bounds);
+          } else {
+            console.warn("Invalid KML bounds. Cannot adjust map view.");
+          }
+        } else {
+          outputDiv.innerHTML += '<p style="color: orange;">No KML file found within the KMZ.</p>';
+        }
+
+      } catch (error) {
+        console.error(error);
+        outputDiv.innerHTML = '<p style="color: red;">An error occurred during file processing.</p>';
+      }
+    });  
+  </script>
+</body>
+
+</html>
